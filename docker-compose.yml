@@ -25,6 +25,7 @@
 # ============================================================
 
 # The list of containers that make up our app.
+
 services:
 
   # ---------- 1) Frontend: the React website ----------
