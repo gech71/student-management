@@ -1,0 +1,139 @@
+# ============================================================
+# docker-compose.yml
+# ------------------------------------------------------------
+# Docker Compose lets us describe several containers in ONE file
+# and start them all with ONE command. Our app has 3 parts,
+# called "services":
+#
+#   frontend -> React website served by Nginx  http://localhost:3000
+#   backend  -> Express API (Node.js)          http://localhost:5000
+#   db       -> PostgreSQL database            localhost:5432
+#
+# Compose puts all 3 containers on the same private network.
+# On that network, a container can reach another one by its
+# service name. Example: the backend finds the database at "db".
+#
+# How to run (open a terminal in this folder):
+#   docker compose --env-file ./backend/.env up --build
+#     --env-file ./backend/.env -> read DB_NAME, DB_USER and DB_PASSWORD
+#                                  for the ${...} values in this file
+#     --build                   -> rebuild the images if the code changed
+#
+# How to stop:
+#   docker compose down      -> stop and remove the containers (data is kept)
+#   docker compose down -v   -> ALSO delete the database data (fresh start)
+# ============================================================
+
+# The list of containers that make up our app.
+services:
+
+  # ---------- 1) Frontend: the React website ----------
+  frontend:
+    # Build the image from the Dockerfile in the ./frontend folder.
+    build: ./frontend
+    # Give the container a fixed, easy name (you see it in "docker ps").
+    # Without it, Compose picks a name like "student-management-frontend-1".
+    container_name: student-frontend
+    # Port mapping, written as "YOUR_COMPUTER:CONTAINER".
+    # Port 3000 on your computer -> port 80 in the container (Nginx).
+    # So you open http://localhost:3000 in your browser.
+    ports:
+      - "3000:80"
+    # Start the backend container before this one.
+    # Note: this only waits for the backend to START, not to be READY.
+    depends_on:
+      - backend
+
+  # ---------- 2) Backend: the Express API ----------
+  backend:
+    # Build the image from the Dockerfile in the ./backend folder.
+    build: ./backend
+    # Fixed container name.
+    container_name: student-backend
+    # Port 5000 on your computer -> port 5000 in the container.
+    # Why open this port? The React code runs in the user's BROWSER,
+    # not inside Docker. The browser calls http://localhost:5000/students,
+    # so the API must be reachable from your computer.
+    ports:
+      - "5000:5000"
+    # Load environment variables from this file into the container when
+    # it starts: DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD.
+    # server.js reads them with process.env.DB_NAME, and so on.
+    # The password stays in .env, not in this file and not in the image.
+    env_file:
+      - ./backend/.env
+    # Extra environment variables. If a name is in both places,
+    # the value HERE wins over the value from env_file.
+    # .env says DB_HOST=localhost, which is right when you run
+    # "node server.js" on your own computer. But inside a container,
+    # "localhost" means "this same container", and the database is in
+    # a different container. On the Compose network we reach it by its
+    # service name: "db".
+    environment:
+      DB_HOST: db
+    # Do not start the backend until the "db" service is HEALTHY
+    # (see the healthcheck below). Otherwise the API could start before
+    # PostgreSQL is ready, fail to connect, and stop.
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # ---------- 3) Database: PostgreSQL ----------
+  db:
+    # Use the official PostgreSQL 17 image from Docker Hub (small
+    # alpine version). We use it as it is, so no Dockerfile is needed.
+    image: postgres:17-alpine
+    # Fixed container name.
+    container_name: student-db
+    # Also load the variables from backend/.env into this container.
+    env_file:
+      - ./backend/.env
+    # The Postgres image reads these special POSTGRES_* variables the
+    # FIRST time it starts with an empty data folder. It creates this
+    # database and this user, with this password.
+    #   ${DB_NAME}      -> "put the value of DB_NAME here". Compose gets it
+    #                      from --env-file ./backend/.env (see the top).
+    #   :?Set DB_NAME   -> if DB_NAME is missing or empty, stop with the
+    #                      error "Set DB_NAME", instead of starting a
+    #                      database with an empty password.
+    environment:
+      POSTGRES_DB: ${DB_NAME:?Set DB_NAME}
+      POSTGRES_USER: ${DB_USER:?Set DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
+    # Port 5432 on your computer -> PostgreSQL in the container.
+    # This lets you connect with tools like pgAdmin, or run the backend
+    # outside Docker. The backend CONTAINER does not need it, because it
+    # talks to "db" over the private Compose network.
+    # Security: remove this in production, so the database cannot be
+    # reached from outside.
+    ports:
+      - "5432:5432"
+    # Keep the database files in a named volume called "student_data".
+    # A container is temporary: when it is removed, its files are gone.
+    # A volume lives outside the container, so our students are still
+    # there after "docker compose down" and "up" again.
+    # Note: because the data is kept, changing DB_PASSWORD in .env later
+    # does NOT change the password of an existing database.
+    # Run "docker compose down -v" to start fresh (deletes all data).
+    volumes:
+      - student_data:/var/lib/postgresql/data
+    # A test Docker runs again and again to check if the database is
+    # ready. The backend waits for this test to pass (see depends_on).
+    healthcheck:
+      # pg_isready is a small Postgres tool that answers the question
+      # "is the server accepting connections?".
+      # "$$" is how we write one real "$" in Compose. So Compose does not
+      # touch $POSTGRES_USER; the shell INSIDE the container fills it in.
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      # Run the test every 5 seconds.
+      interval: 5s
+      # If one test takes longer than 5 seconds, count it as a failure.
+      timeout: 5s
+      # After 10 failures in a row, mark the container as "unhealthy".
+      retries: 10
+
+# The named volumes used above. Docker creates and manages them for us.
+# "docker volume ls" shows it as "student-management_student_data"
+# (Compose adds the project folder name in front).
+volumes:
+  student_data:

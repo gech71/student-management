@@ -1,0 +1,27 @@
+# ============================================================
+# .dockerignore (backend)
+# ------------------------------------------------------------
+# When we build an image, Docker first sends this folder to the
+# builder (this is called the "build context").
+# Files and folders listed here are NOT sent, so a COPY command
+# can never put them inside the image.
+# It works like .gitignore, but for Docker.
+# ============================================================
+
+# Packages installed on YOUR computer. The image installs its own
+# with "npm ci". Also, packages installed on Windows or Mac may not
+# work on the Linux inside the container.
+node_modules
+
+# Git history. Not needed to run the app, it makes the build slower,
+# and old commits can contain secrets.
+.git
+
+# Our secrets (database password, etc.).
+# NEVER put secrets inside an image: anyone who gets the image can
+# read them. docker-compose.yml passes these values in when the
+# container starts instead.
+.env
+
+# npm error log files. Just junk, not needed in the image.
+npm-debug.log
