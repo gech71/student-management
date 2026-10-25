@@ -56,7 +56,7 @@ function App() {
   return (
     <main style={styles.page}>
       <section style={styles.card}>
-        <h1>Student Management</h1>
+        <h1>Student Management System</h1>
         <p>Add students and view the student list.</p>
 
         <form onSubmit={addStudent} style={styles.form}>
